@@ -152,68 +152,89 @@ class SelfForcingModel(BaseModel):
             # noise should be applied to the first video frame
             noise_shape = image_or_video_shape.copy()
 
-        # During training, the number of generated frames should be uniformly sampled from
-        # [min_num_frames, self.num_training_frames], but still being a multiple of self.num_frame_per_block.
-        # If `min_num_frames` is not provided, we fallback to the original default behaviour.
+        # during training, the number of generated frames should be uniformly sampled from min to max
         min_num_frames = (self.min_num_training_frames - 1) if self.args.independent_first_frame else self.min_num_training_frames
         max_num_frames = self.num_training_frames - 1 if self.args.independent_first_frame else self.num_training_frames
 
         # ignoring the first frame if independent_first_frame is set then check if it can be chunked
         assert max_num_frames % self.num_frame_per_block == 0
         assert min_num_frames % self.num_frame_per_block == 0
+
+        # define the range of blocks that we can select from
         max_num_blocks = max_num_frames // self.num_frame_per_block
         min_num_blocks = min_num_frames // self.num_frame_per_block
+
+        # each step is going to generate up to random nummber of block for training robustness
         num_generated_blocks = torch.randint(min_num_blocks, max_num_blocks + 1, (1,), device=self.device)
+        
+        # every GPU is going to sync up to what GPU 0 chose
         dist.broadcast(num_generated_blocks, src=0)
         num_generated_blocks = num_generated_blocks.item()
         num_generated_frames = num_generated_blocks * self.num_frame_per_block
+        # only GPU 0 debugs
         if dist.get_rank() == 0 and DEBUG:
             print(f"num_generated_frames: {num_generated_frames}")
+        # add the first frame back
         if self.args.independent_first_frame and initial_latent is None:
             num_generated_frames += 1
             min_num_frames += 1
-        # Sync num_generated_frames across all processes
+        
+        # [B, F, C, H, W] -> [B, num_generated_frames, C, H, W]
         noise_shape[1] = num_generated_frames
-
+        
+        # generates video from random noise with the conditioning and number of frames to be accounted for loss
         pred_image_or_video, denoised_timestep_from, denoised_timestep_to = self._consistency_backward_simulation(
             noise=torch.randn(noise_shape,
                               device=self.device, dtype=self.dtype),
             slice_last_frames=slice_last_frames,
             **conditional_dict,
         )
-        # Decide whether to slice based on `slice_last_frames`; when `slice_last_frames == -1`, keep all frames
+
+        # decide whether to slice based on `slice_last_frames`; when `slice_last_frames == -1`, keep all frames
         if slice_last_frames != -1 and pred_image_or_video.shape[1] > slice_last_frames:
-            with torch.no_grad():
-                # Re-encode: take all frames before the last (slice_last_frames - 1) frames for pixel decoding
+            with torch.no_grad(): # not part of the loss
+                # 1. takes all frames except the last (slice_last_frames - 1) frames
                 if slice_last_frames > 1:
                     latent_to_decode = pred_image_or_video[:, :-(slice_last_frames - 1), ...]
                 else:
                     latent_to_decode = pred_image_or_video
-                # Decode to video
+                # 2. decode these latents into pixel space using the VAE 
                 pixels = self.vae.decode_to_pixel(latent_to_decode)
+                # 3. extract the last decoded (pixel) frame 
                 frame = pixels[:, -1:, ...].to(self.dtype)
+                # 4. reshape it for the encoding function
                 frame = rearrange(frame, "b t c h w -> b c t h w")
-                # Encode frame to get image latent
+                # 5. re-encode that last decoded frame (pixel space -> latent space)
                 image_latent = self.vae.encode_to_latent(frame).to(self.dtype)
-            if slice_last_frames > 1:
+            if slice_last_frames > 1:   
+                # NOTE: the last frame is now "clean" meaning it lives on the VAE's natural latent distribution
+                # and free from accumulated drift and artifacts from the diffusion process 
+                # 6. add that last clean frame + last (slice_last_frame - 1) frames that were left in latent space
                 last_frames = pred_image_or_video[:, -(slice_last_frames - 1):, ...]
                 pred_image_or_video_sliced = torch.cat([image_latent, last_frames], dim=1)
             else:
+                # otherwise, there is not half to add
                 pred_image_or_video_sliced = image_latent
         else:
+            # no slicing
             pred_image_or_video_sliced = pred_image_or_video
 
         if num_generated_frames != min_num_frames:
-            # Currently, we do not use gradient for the first chunk, since it contains image latents
+            # we generate MORE than minimum frames so some frames are context, some are new
             gradient_mask = torch.ones_like(pred_image_or_video_sliced, dtype=torch.bool)
+            # block the gradient for the first frame
             if self.args.independent_first_frame:
-                gradient_mask[:, :1] = False
+                gradient_mask[:, :1] = False 
             else:
+                # or block the gradient for the first chunk
                 gradient_mask[:, :self.num_frame_per_block] = False
         else:
+            # if we generate exactly minimum frames -> all are "new", no context frames
             gradient_mask = None
 
+        # the concatenated part of the clean last frame and last slice
         pred_image_or_video_sliced = pred_image_or_video_sliced.to(self.dtype)
+
         return pred_image_or_video_sliced, gradient_mask, denoised_timestep_from, denoised_timestep_to
 
     def _consistency_backward_simulation(
@@ -234,9 +255,10 @@ class SelfForcingModel(BaseModel):
             T is the total number of timesteps. output[0] is a pure noise and output[i] and i>0
             represents the x0 prediction at each timestep.
         """
+        
         if self.inference_pipeline is None:
             self._initialize_inference_pipeline()
-
+        # simulate what the model will see during inference while you're still in training. this prevents train/test mismatch.
         return self.inference_pipeline.inference_with_trajectory(
             noise=noise, **conditional_dict, slice_last_frames=slice_last_frames
         )
