@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 from typing import List, Generator, Tuple
 import torch
-# FIX 2: 
-# from einops import rearrange 
+# FIX 2:
+from einops import rearrange 
 from pipeline.causal_inference import CausalInferencePipeline
 from utils.memory import get_cuda_free_memory_gb, gpu
 
@@ -92,7 +92,7 @@ class CausalStreamingInferencePipeline(CausalInferencePipeline):
         blocks_in_chunk = 0
 
         # FIX 2:
-        # last_clean_latent = None
+        last_clean_latent = None
 
         all_num_frames = [self.num_frame_per_block] * num_blocks
 
@@ -173,47 +173,47 @@ class CausalStreamingInferencePipeline(CausalInferencePipeline):
                 # concatenate accumulated latents along the temporal dimension
                 latents_chunk = torch.cat(chunk_latents, dim=1)
                 # FIX 2: 
-                # if not is_final: # we dont need to update if its the last 
-                #     with torch.no_grad():
-                #         # get the last frame of the chunk
-                #         last_block_latent = latents_chunk[:, -1:, ...].to(noise.device)
-                #         last_block_pixels = self.vae.decode_to_pixel(
-                #             last_block_latent, 
-                #             use_cache=False
-                #         )
-                #         # prepare from pixel to latent
-                #         last_block_pixels = rearrange(last_block_pixels, "b t c h w -> b c t h w")
+                if not is_final: # we dont need to update if its the last 
+                    with torch.no_grad():
+                        # get the last frame of the chunk
+                        last_block_latent = latents_chunk[:, -1:, ...].to(noise.device)
+                        last_block_pixels = self.vae.decode_to_pixel(
+                            last_block_latent, 
+                            use_cache=False
+                        )
+                        # prepare from pixel to latent
+                        last_block_pixels = rearrange(last_block_pixels, "b t c h w -> b c t h w")
 
-                #         # re-encode it 
-                #         last_clean_latent = self.vae.encode_to_latent(
-                #             last_block_pixels
-                #         ).to(noise.device)
+                        # re-encode it
+                        last_clean_latent = self.vae.encode_to_latent(
+                            last_block_pixels
+                        ).to(noise.device)
 
-                #         # rewrie that last frame across the current chunk
-                #         latents_chunk[:, -1:, ...] = last_clean_latent
+                        # rewrite that last frame across the current chunk
+                        # NOTE: must match device of latents_chunk (could be CPU in low_memory mode)
+                        latents_chunk[:, -1:, ...] = last_clean_latent.to(latents_chunk.device)
 
-                #         # prepare to create a cleaning timestep
-                #         clean_timestep = torch.ones(
-                #             [batch_size, 1],
-                #             device=noise.device,
-                #             dtype=torch.int64
-                #         ) * self.args.context_noise
+                        # prepare to create a cleaning timestep
+                        clean_timestep = torch.ones(
+                            [batch_size, 1],
+                            device=noise.device,
+                            dtype=torch.int64
+                        ) * self.args.context_noise
                         
-                #         # update KV cache with clean latent (chunk-level and vae-based)
-                #         self.generator(
-                #             noisy_image_or_video=last_clean_latent,
-                #             conditional_dict=conditional_dict,
-                #             timestep=clean_timestep,
-                #             kv_cache=self.kv_cache1,
-                #             crossattn_cache=self.crossattn_cache,
-                #             current_start=(current_start_frame - 1) * self.frame_seq_length,
-                #         )
+                        # update KV cache with clean latent (chunk-level and vae-based)
+                        self.generator(
+                            noisy_image_or_video=last_clean_latent,
+                            conditional_dict=conditional_dict,
+                            timestep=clean_timestep,
+                            kv_cache=self.kv_cache1,
+                            crossattn_cache=self.crossattn_cache,
+                            current_start=(current_start_frame - 1) * self.frame_seq_length,
+                        )
 
 
                 # decode to video
                 video_chunk = self.vae.decode_to_pixel(latents_chunk.to(noise.device), use_cache=False)
                 
-                # FIX 1: remove normalized - latent shift
                 video_chunk = (video_chunk * 0.5 + 0.5).clamp(0, 1)
 
                 yield video_chunk, latents_chunk, is_final
