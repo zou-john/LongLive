@@ -177,3 +177,13 @@ async def ws_generate(ws: WebSocket):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "release_server:app",  # <-- your filename without .py
+        host="0.0.0.0",
+        port=8000,
+        reload=False,          # reload can cause GPU OOM, better off for prod
+    )
