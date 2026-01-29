@@ -18,7 +18,7 @@ from utils.debug_option import DEBUG, LOG_GPU_MEMORY
 class DMDSwitch(DMD):
     """DMD variant that supports mid-video prompt switching."""
 
-    def _initialize_inference_pipeline(self):
+    def dmsttr(self):
         self.inference_pipeline = StreamingSwitchTrainingPipeline(
             denoising_step_list=self.denoising_step_list,
             scheduler=self.scheduler,

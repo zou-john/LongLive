@@ -20,10 +20,14 @@ class DMD(SelfForcingModel):
         """
         super().__init__(args, device)
         self.num_frame_per_block = getattr(args, "num_frame_per_block", 1)
+        # use the same denoising step for all blocks
         self.same_step_across_blocks = getattr(args, "same_step_across_blocks", True)
+
+        # frame count range for variable-length training
         self.min_num_training_frames = getattr(args, "min_num_training_frames", 21)
         self.num_training_frames = getattr(args, "num_training_frames", 21)
 
+        # DMD configurations are wrapped around SelfForcingModel 
         if self.num_frame_per_block > 1:
             self.generator.model.num_frame_per_block = self.num_frame_per_block
 
@@ -34,10 +38,10 @@ class DMD(SelfForcingModel):
             self.generator.enable_gradient_checkpointing()
             self.fake_score.enable_gradient_checkpointing()
 
-        # this will be init later with fsdp-wrapped modules
+        # lazy init with fsdp-wrapped modules
         self.inference_pipeline: SelfForcingTrainingPipeline = None
 
-        # Step 2: Initialize all dmd hyperparameters
+        # initialize all DMD training hyperparameters
         self.num_train_timestep = args.num_train_timestep
         self.min_step = int(0.02 * self.num_train_timestep)
         self.max_step = int(0.98 * self.num_train_timestep)
