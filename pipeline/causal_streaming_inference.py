@@ -184,9 +184,9 @@ class CausalStreamingInferencePipeline(CausalInferencePipeline):
                         # prepare from pixel to latent
                         last_block_pixels = rearrange(last_block_pixels, "b t c h w -> b c t h w")
 
-                        # re-encode it
+                        # re-encode it (cast to noise.dtype to match VAE model dtype)
                         last_clean_latent = self.vae.encode_to_latent(
-                            last_block_pixels
+                            last_block_pixels.to(dtype=noise.dtype)
                         ).to(noise.device)
 
                         # rewrite that last frame across the current chunk
