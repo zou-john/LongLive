@@ -137,7 +137,6 @@ class SelfForcingModel(BaseModel):
             - pred_image: a tensor with shape [B, F, C, H, W].
             - denoised_timestep: an integer
         """
-        # Step 1: Sample noise and backward simulate the generator's input
         assert getattr(self.args, "backward_simulation", True), "Backward simulation needs to be enabled"
 
         # pass the starting frame/image with some latent (for I2V tasks)
