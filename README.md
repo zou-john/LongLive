@@ -100,6 +100,7 @@ conda activate longlive
 conda install nvidia/label/cuda-12.4.1::cuda
 conda install -c nvidia/label/cuda-12.4.1 cudatoolkit
 pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+python -m pip install --upgrade "pip<24"
 pip install -r requirements.txt
 pip install flash-attn --no-build-isolation
 ```

@@ -1,6 +1,7 @@
 # Adopted from https://github.com/guandeh17/Self-Forcing
 # SPDX-License-Identifier: Apache-2.0
 import argparse
+import time
 import torch
 import os
 from omegaconf import OmegaConf
@@ -155,6 +156,9 @@ if local_rank == 0:
 
 if dist.is_initialized():
     dist.barrier()
+    
+    if torch.cuda.device_count() > 1:
+        time.sleep(10) # give the file system a moment to sync metadata
 
 
 def encode(self, videos: torch.Tensor) -> torch.Tensor:
