@@ -153,7 +153,7 @@ async def ws_generate(ws: WebSocket):
                         "type": "frame",
                         **payload,
                     })
-
+                print("[WS] All frames sent - Johnny")
 
                 # for video_chunk, _, is_final in pipeline.inference(
                 #     noise=sampled_noise,
