@@ -23,7 +23,7 @@ num_samples: 1
 save_with_index: true
 global_sink: true
 context_noise: 0
-blocks_per_chunk: 1  # Number of blocks to process before writing intermediate video
+blocks_per_chunk: 5  # chunk 1 == 5 blocks == 15 frames 
 
 generator_ckpt: longlive_models/models/longlive_base.pt
 lora_ckpt: longlive_models/models/lora.pt
