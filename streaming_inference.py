@@ -15,7 +15,7 @@ from torch.utils.data.distributed import DistributedSampler
 from pipeline import (
     CausalInferencePipeline,
 )
-from pipeline.causal_streaming_inference import CausalStreamingInferencePipeline
+from pipeline import CausalChunkInferencePipeline
 from utils.dataset import TextDataset
 from utils.misc import set_seed
 
@@ -68,7 +68,7 @@ torch.set_grad_enabled(False)
 
 # Initialize pipeline
 # Note: checkpoint loading is now handled inside the pipeline __init__ method
-pipeline = CausalStreamingInferencePipeline(config, device=device)
+pipeline = CausalChunkInferencePipeline(config, device=device)
 
 # Load generator checkpoint
 if config.generator_ckpt:
@@ -215,7 +215,7 @@ for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
         model_type = "regular"
 
     chunk_idx = 0
-    for video_chunk, latents_chunk, is_final in pipeline.streaming_inference(
+    for video_chunk, latents_chunk, is_final in pipeline.chunk_inference(
         noise=sampled_noise,
         text_prompts=prompts,
         blocks_per_chunk=blocks_per_chunk,

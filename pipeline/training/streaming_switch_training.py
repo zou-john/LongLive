@@ -7,7 +7,7 @@
 # No warranties are given. The work is provided "AS IS", without warranty of any kind, express or implied.
 #
 # SPDX-License-Identifier: Apache-2.0
-from pipeline.streaming_training import StreamingTrainingPipeline
+from pipeline.training.streaming_training import StreamingTrainingPipeline
 from typing import List, Optional, Tuple
 import torch
 import torch.distributed as dist

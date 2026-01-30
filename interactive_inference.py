@@ -25,9 +25,7 @@ from utils.misc import set_seed
 from utils.distributed import barrier  
 from utils.memory import gpu, get_cuda_free_memory_gb, DynamicSwapInstaller
 
-from pipeline.interactive_causal_inference import (
-    InteractiveCausalInferencePipeline,
-)
+from pipeline import InteractiveCausalInferencePipeline
 from utils.dataset import MultiTextDataset
 
 

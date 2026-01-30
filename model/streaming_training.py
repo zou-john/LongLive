@@ -15,7 +15,7 @@ from einops import rearrange
 
 from utils.debug_option import DEBUG, LOG_GPU_MEMORY, DEBUG_GRADIENT
 from utils.memory import log_gpu_memory
-from pipeline.streaming_switch_training import StreamingSwitchTrainingPipeline
+from pipeline.training import StreamingSwitchTrainingPipeline
 
 
 class StreamingTrainingModel:
@@ -137,7 +137,7 @@ class StreamingTrainingModel:
     def _should_switch_prompt(self, chunk_start_frame: int, chunk_size: int) -> bool:
         """Determine whether to switch prompt (DMDSwitch only)"""
         # Check if the model supports switching (DMDSwitch)
-        from pipeline.streaming_switch_training import StreamingSwitchTrainingPipeline
+        from pipeline.training import StreamingSwitchTrainingPipeline
         if not isinstance(self.inference_pipeline, StreamingSwitchTrainingPipeline):
             if DEBUG and (not dist.is_initialized() or dist.get_rank() == 0):
                 print(f"[StreamingTrain-Model] Not a switch pipeline, no switching")

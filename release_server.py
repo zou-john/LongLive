@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Streaming T2V API using CausalStreamingInferencePipeline
+# Streaming T2V API using CausalChunkInferencePipeline
 
 import os
 import argparse
@@ -14,7 +14,7 @@ from einops import rearrange
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from pipeline.causal_streaming_inference import CausalStreamingInferencePipeline
+from pipeline import CausalChunkInferencePipeline
 from utils.dataset import TextDataset
 from utils.misc import set_seed
 from utils.memory import get_cuda_free_memory_gb, DynamicSwapInstaller
@@ -45,7 +45,7 @@ print(f"[Init] Free VRAM: {get_cuda_free_memory_gb(device):.2f} GB")
 # -----------------------------------------------------------------------------
 
 print("[Init] Loading pipeline...")
-pipeline = CausalStreamingInferencePipeline(config, device=device)
+pipeline = CausalChunkInferencePipeline(config, device=device)
 
 # Load generator checkpoint
 if config.generator_ckpt:

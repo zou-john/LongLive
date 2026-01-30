@@ -25,9 +25,7 @@ from utils.misc import set_seed
 from utils.distributed import barrier  
 from utils.memory import gpu, get_cuda_free_memory_gb, DynamicSwapInstaller
 
-from pipeline.interactive_causal_streaming_inference import (
-    InteractiveCausalStreamingInferencePipeline,
-)
+from pipeline import InteractiveCausalChunkInferencePipeline
 from utils.dataset import MultiTextDataset
 
 
@@ -74,7 +72,7 @@ else:
 low_memory = get_cuda_free_memory_gb(device) < 40
 torch.set_grad_enabled(False)
 
-pipeline = InteractiveCausalStreamingInferencePipeline(config, device=device)
+pipeline = InteractiveCausalChunkInferencePipeline(config, device=device)
 
 if config.generator_ckpt:
     state_dict = torch.load(config.generator_ckpt, map_location="cpu")
@@ -216,7 +214,7 @@ for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
     num_generated_frames = 0
     chunk_idx = 0
 
-    for video_chunk, latents_chunk, is_final in pipeline.streaming_inference(
+    for video_chunk, latents_chunk, is_final in pipeline.chunk_inference(
         noise=sampled_noise,
         text_prompts_list=prompts_list,
         switch_frame_indices=switch_frame_indices,

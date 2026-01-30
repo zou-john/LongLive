@@ -9,7 +9,7 @@ from model.base import SelfForcingModel
 from utils.memory import log_gpu_memory
 import torch.distributed as dist
 from model.dmd import DMD
-from pipeline.streaming_switch_training import StreamingSwitchTrainingPipeline
+from pipeline.training import StreamingSwitchTrainingPipeline
 from einops import rearrange
 
 from utils.debug_option import DEBUG, LOG_GPU_MEMORY
