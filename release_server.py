@@ -84,15 +84,24 @@ app.add_middleware(
 # HELPERS
 # -----------------------------------------------------------------------------
 
+import base64
+import zlib  # Add this import
+
 def encode_frame(frame: torch.Tensor) -> dict:
     """
     frame: (H, W, C) float32 [0,1]
     """
     frame = (frame.clamp(0, 1) * 255).to(torch.uint8).cpu()
-    payload = base64.b64encode(frame.numpy().tobytes()).decode("ascii")
+    frame_bytes = frame.numpy().tobytes()
+    
+    # Compress the data
+    compressed = zlib.compress(frame_bytes, level=6)
+    
+    payload = base64.b64encode(compressed).decode("ascii")
     return {
         "data": payload,
         "shape": list(frame.shape),  # HWC
+        "compressed": True,  # Flag to indicate compression
     }
 
 # -----------------------------------------------------------------------------
