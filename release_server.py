@@ -155,6 +155,10 @@ async def ws_generate(ws: WebSocket):
                 #     })
                 # print("[WS] All frames sent - Johnny")
 
+                print(
+                    "[WS] Using chunked causal inference for streaming generation"
+                )
+
                 for video_chunk, _, is_final in pipeline.chunk_inference(
                     noise=sampled_noise,
                     text_prompts=prompts,
