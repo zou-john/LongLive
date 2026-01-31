@@ -180,6 +180,6 @@ model_type = "backtrack"
 
 # write the video
 output_path = os.path.join(config.output_folder, f"myprompt-{model_type}.mp4")
-write_video(output_path, current_video.to(torch.uint8), fps=16)
+write_video(output_path, current_video[0].to(torch.uint8), fps=16)
 
 
