@@ -87,12 +87,26 @@ app.add_middleware(
 from PIL import Image
 import io
 
-def encode_frame(frame: torch.Tensor) -> dict:
-    frame = (frame.clamp(0, 1) * 255).to(torch.uint8).cpu().numpy()
-    img = Image.fromarray(frame)
+def encode_frame(frame: torch.Tensor, debug=False) -> dict:
+    # Frame should be in range [0, 1] from the pipeline
+    # Let's check the actual range
+    if debug:
+        print(f"Frame range: [{frame.min().item():.4f}, {frame.max().item():.4f}]")
+    
+    # Don't clamp - let's see if values are actually outside [0, 1]
+    # If they are, we need to understand why
+    frame = (frame * 255.0).to(torch.uint8)
+    
+    # Ensure it's on CPU and contiguous
+    if frame.is_cuda:
+        frame = frame.cpu()
+    frame = frame.contiguous()
+    
+    frame_np = frame.numpy()
+    img = Image.fromarray(frame_np)
 
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
+    img.save(buf, format="JPEG", quality=95, optimize=False)
 
     return {
         "data": base64.b64encode(buf.getvalue()).decode("ascii"),
@@ -116,6 +130,10 @@ async def ws_generate(ws: WebSocket):
 
         prompts = [prompt] * num_samples
 
+        # Clear VAE cache before starting
+        pipeline.vae.model.clear_cache()
+        torch.cuda.empty_cache()
+        
         sampled_noise = torch.randn(
             [
                 num_samples,
@@ -132,7 +150,7 @@ async def ws_generate(ws: WebSocket):
 
         async def stream():
             try:
-                # causal infernece (non streaming)
+                # Generate video (returns values in [0, 1] range)
                 video, latents = pipeline.inference(
                     noise=sampled_noise,
                     text_prompts=prompts,
@@ -141,24 +159,40 @@ async def ws_generate(ws: WebSocket):
                     profile=False,
                 )
                 
-                # Ensure GPU operations are complete before CPU transfer
+                # Match inference.py processing exactly
                 torch.cuda.synchronize()
                 
-                # Transfer to CPU and clone to ensure data integrity
-                current_video = rearrange(video, 'b t c h w -> b t h w c').cpu().clone()
+                # DEBUG: Check video tensor stats before rearrange
+                print(f"[DEBUG] Video tensor - shape: {video.shape}, dtype: {video.dtype}")
+                print(f"[DEBUG] Video range: [{video.min().item():.4f}, {video.max().item():.4f}]")
+                print(f"[DEBUG] Video mean: {video.mean().item():.4f}, std: {video.std().item():.4f}")
                 
-                # Delete GPU tensors to free memory
+                current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
+                
+                # DEBUG: Check per-frame stats
+                print(f"[DEBUG] Checking first 5 frames:")
+                for i in range(min(5, current_video.shape[1])):
+                    frame = current_video[0, i]
+                    print(f"  Frame {i}: min={frame.min().item():.4f}, max={frame.max().item():.4f}, mean={frame.mean().item():.4f}")
+                
+                # Clear cache before sending frames
+                pipeline.vae.model.clear_cache()
+                
+                # Clean up GPU memory
                 del video, latents
                 torch.cuda.empty_cache()
                 
-                for frame in current_video[0]:  # Iterate over frames of the first sample
-                    # Clone frame to ensure no memory sharing issues
-                    frame_copy = frame.clone()
-                    payload = encode_frame(frame_copy)
+                # Send frames one by one
+                for idx, frame in enumerate(current_video[0]):
+                    # Debug first, middle, and last frames
+                    debug = (idx < 3) or (idx == len(current_video[0]) // 2) or (idx >= len(current_video[0]) - 3)
+                    payload = encode_frame(frame, debug=debug)
                     await ws.send_json({
                         "type": "frame",
                         **payload,
                     })
+                
+                del current_video
                 print("[WS] All frames sent - Johnny")
 
                 # print(
