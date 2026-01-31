@@ -138,46 +138,46 @@ async def ws_generate(ws: WebSocket):
         async def stream():
             try:
                 # causal infernece (non streaming)
-                video, latents = pipeline.inference(
-                    noise=sampled_noise,
-                    text_prompts=prompts,
-                    return_latents=True,
-                    low_memory=low_memory,
-                    profile=False,
-                )
-                
-                current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
-                for frame in current_video[0]:  # Iterate over frames of the first sample
-                    payload = encode_frame(frame)
-                    await ws.send_json({
-                        "type": "frame",
-                        **payload,
-                    })
-                print("[WS] All frames sent - Johnny")
-
-                # for video_chunk, _, is_final in pipeline.inference(
+                # video, latents = pipeline.inference(
                 #     noise=sampled_noise,
                 #     text_prompts=prompts,
-                #     blocks_per_chunk=blocks_per_chunk,
+                #     return_latents=True,
                 #     low_memory=low_memory,
-                # ):
-                #     # video_chunk: (B, T, C, H, W)
-                #     frames = rearrange(
-                #         video_chunk, "b t c h w -> b t h w c"
-                #     )
+                #     profile=False,
+                # )
+                
+                # current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
+                # for frame in current_video[0]:  # Iterate over frames of the first sample
+                #     payload = encode_frame(frame)
+                #     await ws.send_json({
+                #         "type": "frame",
+                #         **payload,
+                #     })
+                # print("[WS] All frames sent - Johnny")
 
-                #     # send frames
-                #     for t in range(frames.shape[1]):
-                #         frame = frames[0, t]
-                #         payload = encode_frame(frame)
-                #         await ws.send_json({
-                #             "type": "frame",
-                #             **payload,
-                #         })
-                #     # NOTE: problem is here 
-                #     if is_final:
-                #         await ws.send_json({"type": "done"})
-                #         break
+                for video_chunk, _, is_final in pipeline.chunk_inference(
+                    noise=sampled_noise,
+                    text_prompts=prompts,
+                    blocks_per_chunk=blocks_per_chunk,
+                    low_memory=low_memory,
+                ):
+                    # video_chunk: (B, T, C, H, W)
+                    frames = rearrange(
+                        video_chunk, "b t c h w -> b t h w c"
+                    )
+
+                    # send frames
+                    for t in range(frames.shape[1]):
+                        frame = frames[0, t]
+                        payload = encode_frame(frame)
+                        await ws.send_json({
+                            "type": "frame",
+                            **payload,
+                        })
+                    # NOTE: problem is here 
+                    if is_final:
+                        await ws.send_json({"type": "done"})
+                        break
 
                 pipeline.vae.model.clear_cache()
                 print("[WS] Generation complete")
