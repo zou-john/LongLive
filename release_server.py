@@ -45,7 +45,7 @@ print(f"[Init] Free VRAM: {get_cuda_free_memory_gb(device):.2f} GB")
 # -----------------------------------------------------------------------------
 
 print("[Init] Loading pipeline...")
-pipeline = CausalChunkInferencePipeline(config, device=device)
+pipeline = CausalInferencePipeline(config, device=device)
 
 # Load generator checkpoint
 if config.generator_ckpt:
@@ -84,24 +84,19 @@ app.add_middleware(
 # HELPERS
 # -----------------------------------------------------------------------------
 
-import base64
-import zlib  # Add this import
+from PIL import Image
+import io
 
 def encode_frame(frame: torch.Tensor) -> dict:
-    """
-    frame: (H, W, C) float32 [0,1]
-    """
-    frame = (frame.clamp(0, 1) * 255).to(torch.uint8).cpu()
-    frame_bytes = frame.numpy().tobytes()
-    
-    # Compress the data
-    compressed = zlib.compress(frame_bytes, level=6)
-    
-    payload = base64.b64encode(compressed).decode("ascii")
+    frame = (frame.clamp(0, 1) * 255).to(torch.uint8).cpu().numpy()
+    img = Image.fromarray(frame)
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+
     return {
-        "data": payload,
-        "shape": list(frame.shape),  # HWC
-        "compressed": True,  # Flag to indicate compression
+        "data": base64.b64encode(buf.getvalue()).decode("ascii"),
+        "format": "jpeg",
     }
 
 # -----------------------------------------------------------------------------
@@ -138,50 +133,50 @@ async def ws_generate(ws: WebSocket):
         async def stream():
             try:
                 # causal infernece (non streaming)
-                # video, latents = pipeline.inference(
-                #     noise=sampled_noise,
-                #     text_prompts=prompts,
-                #     return_latents=True,
-                #     low_memory=low_memory,
-                #     profile=False,
-                # )
-                
-                # current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
-                # for frame in current_video[0]:  # Iterate over frames of the first sample
-                #     payload = encode_frame(frame)
-                #     await ws.send_json({
-                #         "type": "frame",
-                #         **payload,
-                #     })
-                # print("[WS] All frames sent - Johnny")
-
-                print(
-                    "[WS] Using chunked causal inference for streaming generation"
-                )
-
-                for video_chunk, _, is_final in pipeline.chunk_inference(
+                video, latents = pipeline.inference(
                     noise=sampled_noise,
                     text_prompts=prompts,
-                    blocks_per_chunk=blocks_per_chunk,
+                    return_latents=True,
                     low_memory=low_memory,
-                ):
-                    # video_chunk: (B, T, C, H, W)
-                    frames = rearrange(
-                        video_chunk, "b t c h w -> b t h w c"
-                    )
+                    profile=False,
+                )
+                
+                current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
+                for frame in current_video[0]:  # Iterate over frames of the first sample
+                    payload = encode_frame(frame)
+                    await ws.send_json({
+                        "type": "frame",
+                        **payload,
+                    })
+                print("[WS] All frames sent - Johnny")
 
-                    # send frames
-                    for t in range(frames.shape[1]):
-                        frame = frames[0, t]
-                        payload = encode_frame(frame)
-                        await ws.send_json({
-                            "type": "frame",
-                            **payload,
-                        })
-                    # NOTE: problem is here 
-                    if is_final:
-                        await ws.send_json({"type": "done"})
-                        break
+                # print(
+                #     "[WS] Using chunked causal inference for streaming generation"
+                # )
+
+                # for video_chunk, _, is_final in pipeline.chunk_inference(
+                #     noise=sampled_noise,
+                #     text_prompts=prompts,
+                #     blocks_per_chunk=blocks_per_chunk,
+                #     low_memory=low_memory,
+                # ):
+                #     # video_chunk: (B, T, C, H, W)
+                #     frames = rearrange(
+                #         video_chunk, "b t c h w -> b t h w c"
+                #     )
+
+                #     # send frames
+                #     for t in range(frames.shape[1]):
+                #         frame = frames[0, t]
+                #         payload = encode_frame(frame)
+                #         await ws.send_json({
+                #             "type": "frame",
+                #             **payload,
+                #         })
+                #     # NOTE: problem is here 
+                #     if is_final:
+                #         await ws.send_json({"type": "done"})
+                #         break
 
                 pipeline.vae.model.clear_cache()
                 print("[WS] Generation complete")
