@@ -261,8 +261,8 @@ class InteractiveCausalInferencePipeline(CausalInferencePipeline):
             # Update frame pointer
             current_start_frame += current_num_frames
 
-        # Standard decoding
-        video = self.vae.decode_to_pixel(output.to(noise.device), use_cache=False)
+        # Standard decoding (use chunked decoding to avoid OOM on large frame counts)
+        video = self.vae.decode_to_pixel_chunk(output.to(noise.device), use_cache=False, chunk_size=60)
         video = (video * 0.5 + 0.5).clamp(0, 1)
 
         if return_latents:
