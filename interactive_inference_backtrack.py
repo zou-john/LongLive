@@ -90,6 +90,8 @@ if config.generator_ckpt:
 
 # lora for optimization (from config/longlive_interactive_inference_le.yaml)
 pipeline.is_lora_enabled = False
+from utils.lora_utils import configure_lora_for_model
+import peft
 if getattr(config, "adapter", None) and configure_lora_for_model is not None:
     if local_rank == 0:
         print(f"LoRA enabled with config: {config.adapter}")
@@ -149,7 +151,6 @@ assert len(switch_frame_indices) == num_segments - 1, (
 )
 
 # create the batch data dimensions
-batch_data = original_prompts.unsqueeze(0)
 prompt_list = original_prompts
 
 # inference the original prompt_list
@@ -167,10 +168,10 @@ dtype=torch.bfloat16,
 
 # initialize intermediate kv_cache 
 video = pipeline.inference(
-    sampled_noise=sampled_noise, 
-    text_prompts=prompt_list,
+    noise=sampled_noise, 
+    text_prompts_list=prompt_list,
     switch_frame_indices=switch_frame_indices,
-    return_latents
+    return_latents=False
 )
 
 # rearranged
@@ -179,6 +180,6 @@ model_type = "backtrack"
 
 # write the video
 output_path = os.path.join(config.output_folder, f"myprompt-{model_type}.mp4")
-write_video(output_path, current_video[seed_idx].to(torch.uint8), fps=16)
+write_video(output_path, current_video.to(torch.uint8), fps=16)
 
 
