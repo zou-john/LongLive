@@ -155,31 +155,62 @@ prompt_list = original_prompts
 
 # inference the original prompt_list
 sampled_noise = torch.randn(
-[
-    config.num_samples, # 1
-    config.num_output_frames, # 120 frames for 30 seconds
-    16, # channels = 16
-    60, # height = 480 // 8 = 60
-    104, # weight = 832 // 8 = 104
-],
-device=device,
-dtype=torch.bfloat16,
+    [
+        config.num_samples,  # 1
+        config.num_output_frames,  # 120 frames for 30 seconds
+        16,  # channels = 16
+        60,  # height = 480 // 8 = 60
+        104,  # width = 832 // 8 = 104
+    ],
+    device=device,
+    dtype=torch.bfloat16,
 )
 
-# initialize intermediate kv_cache 
+# Step 1: Generate original video with checkpoints enabled
+print("=" * 50)
+print("Step 1: Generating original video with checkpoints")
+print("=" * 50)
 video = pipeline.inference(
-    noise=sampled_noise, 
+    noise=sampled_noise,
     text_prompts_list=prompt_list,
     switch_frame_indices=switch_frame_indices,
-    return_latents=False
+    return_latents=False,
+    save_checkpoints=True,  # Enable checkpoint saving
 )
 
-# rearranged
+# Save original video
 current_video = rearrange(video, "b t c h w -> b t h w c").cpu() * 255.0
-model_type = "backtrack"
+output_path = os.path.join(config.output_folder, "myprompt-original.mp4")
+write_video(output_path, current_video[0].to(torch.uint8), fps=16)
+print(f"Original video saved to {output_path}")
+print(f"Available checkpoints: {list(pipeline.checkpoints.keys())}")
 
-# write the video
-output_path = os.path.join(config.output_folder, f"myprompt-{model_type}.mp4")
-write_video(output_path, current_video.to(torch.uint8), fps=16)
+# Step 2: Edit from scene 3 onwards using checkpoint[2] (after scene 2)
+# This retains scenes 1-2 and regenerates scenes 3-5 with new prompts
+print("=" * 50)
+print("Step 2: Editing scenes 3-5 from checkpoint[2]")
+print("=" * 50)
+
+# Build new prompt list: keep P1, P2, use REPROMPT for 3, 4, 5
+edited_prompts = [PROMPT_1, PROMPT_2, REPROMPT_3, REPROMPT_4, REPROMPT_5]
+
+video_edited = pipeline.inference_from_checkpoint(
+    noise=sampled_noise,
+    restore_from_scene=2,  # Restore checkpoint[2] (after scene 2 completes)
+    text_prompts_list=edited_prompts,
+    switch_frame_indices=switch_frame_indices,
+    return_latents=False,
+    save_checkpoints=True,  # Save new checkpoints for further editing
+)
+
+# Save edited video
+edited_video = rearrange(video_edited, "b t c h w -> b t h w c").cpu() * 255.0
+output_path = os.path.join(config.output_folder, "myprompt-edited.mp4")
+write_video(output_path, edited_video[0].to(torch.uint8), fps=16)
+print(f"Edited video saved to {output_path}")
+
+# Clean up checkpoints to free memory
+pipeline.clear_checkpoints()
+print("Checkpoints cleared.")
 
 
