@@ -12,7 +12,7 @@ This isolates whether flickering is caused by websocket transmission.
 
 Usage:
     cd LongLive
-    python tests/02_test_websocket.py --config_path configs/longlive_inference.yaml
+    python tests/02_test_websocket.py --config_path configs/longlive_inference_le.yaml
 
 Output:
     - output/websocket_test/raw_video.mp4       : Video saved BEFORE websocket (baseline)
@@ -57,7 +57,7 @@ torch.set_grad_enabled(False)
 # CONFIG
 # -----------------------------------------------------------------------------
 
-OUTPUT_DIR = PROJECT_ROOT / "output" / "websocket_test"
+OUTPUT_DIR = PROJECT_ROOT / "videos" / "websocket"
 TEST_PROMPT = "A cat walking in a garden with flowers, cinematic lighting"
 WS_PORT = 18765  # Use non-standard port to avoid conflicts
 
@@ -348,7 +348,7 @@ def main():
     parser = argparse.ArgumentParser(description="Self-contained websocket video test")
     parser.add_argument("--config_path", type=str, required=True)
     parser.add_argument("--prompt", type=str, default=TEST_PROMPT)
-    parser.add_argument("--num_frames", type=int, default=21, help="Number of frames to generate")
+    parser.add_argument("--num_frames", type=int, default=60, help="Number of frames to generate")
     args = parser.parse_args()
 
     config = OmegaConf.load(args.config_path)

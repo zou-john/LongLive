@@ -16,7 +16,7 @@ Output structure in videos/byte/:
   - comparison_stats.txt    : Statistics about value ranges, differences
 
 Usage:
-    python tests/01_test_encode_frame.py --config_path configs/longlive_inference.yaml
+    python tests/01_test_encode_frame.py --config_path configs/longlive_inference_le.yaml
 """
 
 import os
