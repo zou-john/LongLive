@@ -45,7 +45,7 @@ print(f"[Init] Free VRAM: {get_cuda_free_memory_gb(device):.2f} GB")
 # -----------------------------------------------------------------------------
 
 print("[Init] Loading pipeline...")
-pipeline = CausalInferencePipeline(config, device=device)
+pipeline = CausalChunkInferencePipeline(config, device=device)
 
 # Load generator checkpoint
 if config.generator_ckpt:
@@ -147,7 +147,7 @@ async def ws_generate(ws: WebSocket):
                 )
                 
                 current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
-                for frame in current_video[1]:  # Iterate over frames of the first sample
+                for frame in current_video[0]:  # Iterate over frames of the first sample
                     payload = encode_frame(frame)
                     await ws.send_json({
                         "type": "frame",
