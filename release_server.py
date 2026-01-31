@@ -187,17 +187,23 @@ async def ws_generate(ws: WebSocket):
                     print(f"[DEBUG] Video saved to: {debug_video_path}")
                 
                 # Stream frames to client
-                print(f"[DEBUG] Streaming {len(current_video[0])} frames to client...")
+                total_frames = len(current_video[0])
+                print(f"[DEBUG] Streaming {total_frames} frames to client...")
                 for idx, frame in enumerate(current_video[0]):  # Iterate over frames of the first sample
                     payload = encode_frame(frame)
                     await ws.send_json({
                         "type": "frame",
+                        "frame_index": idx,
+                        "total_frames": total_frames,
                         **payload,
                     })
                     # Log progress every 20 frames
                     if (idx + 1) % 20 == 0:
-                        print(f"[DEBUG] Sent {idx + 1}/{len(current_video[0])} frames")
-                print("[WS] All frames sent - Johnny")
+                        print(f"[DEBUG] Sent {idx + 1}/{total_frames} frames")
+
+                # Send done signal
+                await ws.send_json({"type": "done", "total_frames": total_frames})
+                print("[WS] All frames sent")
 
                 # print(
                 #     "[WS] Using chunked causal inference for streaming generation"
