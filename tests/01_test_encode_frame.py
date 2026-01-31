@@ -16,7 +16,7 @@ Output structure in videos/byte/:
   - comparison_stats.txt    : Statistics about value ranges, differences
 
 Usage:
-    python tests/02_test_encode_frame.py --config_path configs/longlive_inference.yaml
+    python tests/01_test_encode_frame.py --config_path configs/longlive_inference.yaml
 """
 
 import os
@@ -25,6 +25,12 @@ import base64
 import io
 import json
 from pathlib import Path
+import sys
+
+# add parent directory to path for imports
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 import torch
 import numpy as np
@@ -32,7 +38,6 @@ from PIL import Image
 from omegaconf import OmegaConf
 from einops import rearrange
 from torchvision.io import write_video
-
 from pipeline import CausalInferencePipeline
 from utils.misc import set_seed
 from utils.memory import get_cuda_free_memory_gb, DynamicSwapInstaller
@@ -43,7 +48,7 @@ torch.set_grad_enabled(False)
 # CONFIG
 # -----------------------------------------------------------------------------
 
-OUTPUT_DIR = Path("/Users/johnbzou/VSCode/random stuff/LongLive/videos/byte")
+OUTPUT_DIR = Path("/users/jzou22/scratch/LongLive/videos/bytes")
 TEST_PROMPT = "A cat walking in a garden with flowers, cinematic lighting"
 NUM_FRAMES_TO_SAVE = 10  # Save first N individual frames for detailed comparison
 
@@ -88,7 +93,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", type=str, required=True)
     parser.add_argument("--prompt", type=str, default=TEST_PROMPT)
-    parser.add_argument("--num_frames", type=int, default=21, help="Number of frames to generate")
+    parser.add_argument("--num_frames", type=int, default=60, help="Number of frames to generate")
     args = parser.parse_args()
 
     config = OmegaConf.load(args.config_path)
@@ -176,9 +181,6 @@ def main():
     write_video(str(raw_video_path), raw_video_for_save, fps=16)
     print(f"[Save] Raw video saved to: {raw_video_path}")
 
-    # -----------------------------------------------------------------------------
-    # Process Through encode_frame() and Reconstruct (JPEG)
-    # -----------------------------------------------------------------------------
     print("[Encode] Processing frames through encode_frame() (JPEG)...")
 
     stats = {
@@ -192,7 +194,9 @@ def main():
         "png_sizes_bytes": [],
         "frame_differences": [],
     }
-
+    # -----------------------------------------------------------------------------
+    # Process Through encode_frame() and Reconstruct (JPEG)
+    # -----------------------------------------------------------------------------
     encoded_frames_jpeg = []
     encoded_frames_png = []
 
