@@ -141,9 +141,20 @@ async def ws_generate(ws: WebSocket):
                     profile=False,
                 )
                 
-                current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
+                # Ensure GPU operations are complete before CPU transfer
+                torch.cuda.synchronize()
+                
+                # Transfer to CPU and clone to ensure data integrity
+                current_video = rearrange(video, 'b t c h w -> b t h w c').cpu().clone()
+                
+                # Delete GPU tensors to free memory
+                del video, latents
+                torch.cuda.empty_cache()
+                
                 for frame in current_video[0]:  # Iterate over frames of the first sample
-                    payload = encode_frame(frame)
+                    # Clone frame to ensure no memory sharing issues
+                    frame_copy = frame.clone()
+                    payload = encode_frame(frame_copy)
                     await ws.send_json({
                         "type": "frame",
                         **payload,
