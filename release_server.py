@@ -23,6 +23,10 @@ from utils.memory import get_cuda_free_memory_gb, DynamicSwapInstaller
 # CONFIG / INIT
 # -----------------------------------------------------------------------------
 
+# Debug configuration
+DEBUG_SAVE_VIDEOS = True  # Set to False to disable video saving
+DEBUG_OUTPUT_DIR = "/tmp/debug_videos"  # Change to Modal volume path like "/data/debug_videos"
+
 torch.set_grad_enabled(False)
 
 parser = argparse.ArgumentParser()
@@ -87,31 +91,46 @@ app.add_middleware(
 from PIL import Image
 import io
 
-def encode_frame(frame: torch.Tensor, debug=False) -> dict:
-    # Frame should be in range [0, 1] from the pipeline
-    # Let's check the actual range
-    if debug:
-        print(f"Frame range: [{frame.min().item():.4f}, {frame.max().item():.4f}]")
-    
-    # Don't clamp - let's see if values are actually outside [0, 1]
-    # If they are, we need to understand why
-    frame = (frame * 255.0).to(torch.uint8)
-    
-    # Ensure it's on CPU and contiguous
-    if frame.is_cuda:
-        frame = frame.cpu()
-    frame = frame.contiguous()
-    
-    frame_np = frame.numpy()
-    img = Image.fromarray(frame_np)
+def encode_frame(frame: torch.Tensor) -> dict:
+    frame = (frame.clamp(0, 1) * 255).to(torch.uint8).cpu().numpy()
+    img = Image.fromarray(frame)
 
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=95, optimize=False)
+    img.save(buf, format="JPEG", quality=90)
 
     return {
         "data": base64.b64encode(buf.getvalue()).decode("ascii"),
         "format": "jpeg",
     }
+
+def save_video_for_debugging(video_tensor: torch.Tensor, prompt: str, output_dir: str = "/tmp/debug_videos"):
+    """
+    Save video to disk for debugging purposes - EXACT same logic as inference.py
+    
+    Args:
+        video_tensor: Tensor of shape (T, H, W, C) with values in [0, 1] (already rearranged)
+        prompt: Text prompt used for generation
+        output_dir: Directory to save videos
+    """
+    from torchvision.io import write_video
+    import re
+    import time
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Generate a safe filename from prompt
+    safe_prompt = re.sub(r'[^\w\s-]', '', prompt)[:50]
+    safe_prompt = re.sub(r'[-\s]+', '_', safe_prompt)
+    timestamp = int(time.time())
+    
+    # EXACT same as inference.py: multiply by 255.0 (no clamping, no uint8 conversion here)
+    video_to_save = 255.0 * video_tensor
+    
+    output_path = os.path.join(output_dir, f"{safe_prompt}_{timestamp}.mp4")
+    write_video(output_path, video_to_save, fps=16)
+    print(f"[DEBUG] Saved video to: {output_path}")
+    
+    return output_path
 
 # -----------------------------------------------------------------------------
 # WEBSOCKET ENDPOINT
@@ -130,10 +149,6 @@ async def ws_generate(ws: WebSocket):
 
         prompts = [prompt] * num_samples
 
-        # Clear VAE cache before starting
-        pipeline.vae.model.clear_cache()
-        torch.cuda.empty_cache()
-        
         sampled_noise = torch.randn(
             [
                 num_samples,
@@ -150,7 +165,7 @@ async def ws_generate(ws: WebSocket):
 
         async def stream():
             try:
-                # Generate video (returns values in [0, 1] range)
+                # causal infernece (non streaming)
                 video, latents = pipeline.inference(
                     noise=sampled_noise,
                     text_prompts=prompts,
@@ -159,40 +174,29 @@ async def ws_generate(ws: WebSocket):
                     profile=False,
                 )
                 
-                # Match inference.py processing exactly
-                torch.cuda.synchronize()
-                
-                # DEBUG: Check video tensor stats before rearrange
-                print(f"[DEBUG] Video tensor - shape: {video.shape}, dtype: {video.dtype}")
-                print(f"[DEBUG] Video range: [{video.min().item():.4f}, {video.max().item():.4f}]")
-                print(f"[DEBUG] Video mean: {video.mean().item():.4f}, std: {video.std().item():.4f}")
-                
                 current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
                 
-                # DEBUG: Check per-frame stats
-                print(f"[DEBUG] Checking first 5 frames:")
-                for i in range(min(5, current_video.shape[1])):
-                    frame = current_video[0, i]
-                    print(f"  Frame {i}: min={frame.min().item():.4f}, max={frame.max().item():.4f}, mean={frame.mean().item():.4f}")
+                # Save video for debugging BEFORE streaming
+                # This ensures we save exactly what we're about to send
+                if DEBUG_SAVE_VIDEOS:
+                    debug_video_path = save_video_for_debugging(
+                        current_video[0],  # First sample
+                        prompt,
+                        output_dir=DEBUG_OUTPUT_DIR
+                    )
+                    print(f"[DEBUG] Video saved to: {debug_video_path}")
                 
-                # Clear cache before sending frames
-                pipeline.vae.model.clear_cache()
-                
-                # Clean up GPU memory
-                del video, latents
-                torch.cuda.empty_cache()
-                
-                # Send frames one by one
-                for idx, frame in enumerate(current_video[0]):
-                    # Debug first, middle, and last frames
-                    debug = (idx < 3) or (idx == len(current_video[0]) // 2) or (idx >= len(current_video[0]) - 3)
-                    payload = encode_frame(frame, debug=debug)
+                # Stream frames to client
+                print(f"[DEBUG] Streaming {len(current_video[0])} frames to client...")
+                for idx, frame in enumerate(current_video[0]):  # Iterate over frames of the first sample
+                    payload = encode_frame(frame)
                     await ws.send_json({
                         "type": "frame",
                         **payload,
                     })
-                
-                del current_video
+                    # Log progress every 20 frames
+                    if (idx + 1) % 20 == 0:
+                        print(f"[DEBUG] Sent {idx + 1}/{len(current_video[0])} frames")
                 print("[WS] All frames sent - Johnny")
 
                 # print(
